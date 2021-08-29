@@ -531,6 +531,7 @@ state BAR:
   'verbose'                -> BAR_VERBOSE
   'height'                 -> BAR_HEIGHT
   'colors'                 -> BAR_COLORS_BRACE
+  'global_align'           -> BAR_GLOBAL_ALIGN
   '}'
       -> call cfg_bar_finish(); INITIAL
 
@@ -696,3 +697,7 @@ state BAR_COLORS_TEXT:
       -> call cfg_bar_color($colorclass, $border, $background, NULL); BAR_COLORS
   text = word
       -> call cfg_bar_color($colorclass, $border, $background, $text); BAR_COLORS
+
+state BAR_GLOBAL_ALIGN:
+   globalalign = word
+      -> call cfg_bar_global_align($globalalign); BAR

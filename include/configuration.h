@@ -390,6 +390,12 @@ struct Barconfig {
         char *binding_mode_text;
     } colors;
 
+    enum {
+        BLOCK_ALIGN_LEFT = 0,
+        BLOCK_ALIGN_CENTER = 1,
+        BLOCK_ALIGN_RIGHT = 2
+    } global_align;
+
     TAILQ_ENTRY(Barconfig) configs;
 };
 

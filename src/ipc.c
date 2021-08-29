@@ -849,6 +849,22 @@ static void dump_bar_config(yajl_gen gen, Barconfig *config) {
     ystr("verbose");
     y(bool, config->verbose);
 
+    ystr("global_align");
+    switch (config->global_align) {
+        case BLOCK_ALIGN_LEFT:
+            ystr("left");
+            break;
+        case BLOCK_ALIGN_CENTER:
+            ystr("center");
+            break;
+        case BLOCK_ALIGN_RIGHT:
+            ystr("right");
+            break;
+        default:
+            ystr("right");
+            break;
+    }
+
 #undef YSTR_IF_SET
 #define YSTR_IF_SET(name)              \
     do {                               \

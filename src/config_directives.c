@@ -889,12 +889,23 @@ CFGFUN(bar_strip_workspace_name, const char *value) {
     current_bar->strip_workspace_name = boolstr(value);
 }
 
+CFGFUN(bar_global_align, const char *value) {
+    if (strcmp(value, "center") == 0) {
+        current_bar->global_align = BLOCK_ALIGN_CENTER;
+    } else if (strcmp(value, "left") == 0) {
+        current_bar->global_align = BLOCK_ALIGN_LEFT;
+    } else if (strcmp(value, "right") == 0) {
+        current_bar->global_align = BLOCK_ALIGN_RIGHT;
+    }
+}
+
 CFGFUN(bar_start) {
     current_bar = scalloc(1, sizeof(struct Barconfig));
     TAILQ_INIT(&(current_bar->bar_bindings));
     TAILQ_INIT(&(current_bar->tray_outputs));
     current_bar->tray_padding = 2;
     current_bar->modifier = XCB_KEY_BUT_MASK_MOD_4;
+    current_bar->global_align = BLOCK_ALIGN_RIGHT;
 }
 
 CFGFUN(bar_finish) {
