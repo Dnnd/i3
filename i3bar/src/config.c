@@ -220,6 +220,20 @@ static int config_string_cb(void *params_, const unsigned char *val, size_t _len
         TAILQ_INSERT_TAIL(&(config.tray_outputs), tray_output, tray_outputs);
         return 1;
     }
+    if (!strcmp(cur_key, "global_align")) {
+        if (len == strlen("center") && !strncmp((const char *)val, "center", strlen("center"))) {
+            config.global_align = ALIGN_CENTER;
+        } else if (len == strlen("right") && !strncmp((const char *)val, "right", strlen("right"))) {
+            config.global_align = ALIGN_RIGHT;
+        } else if (len == strlen("left") && !strncmp((const char *)val, "left", strlen("left"))) {
+            config.global_align = ALIGN_LEFT;
+        } else {
+            DLOG("Unknown global_align parameter: %.*s\n", len, val);
+            config.global_align = ALIGN_RIGHT;
+        }
+        DLOG("global_align: %.*s\n", len, val);
+        return 1;
+    }
 
 #define COLOR(json_name, struct_name)                                  \
     do {                                                               \

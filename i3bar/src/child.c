@@ -178,6 +178,8 @@ static int stdin_start_map(void *context) {
     else
         ctx->block.sep_block_width = logical_px(8) + separator_symbol_width;
 
+    ctx->block.global_align = config.global_align;
+
     /* By default we draw all four borders if a border is set. */
     ctx->block.border_top = 1;
     ctx->block.border_right = 1;

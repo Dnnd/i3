@@ -61,6 +61,7 @@ typedef struct config_t {
     char **outputs;
 
     bar_display_mode_t hide_on_modifier;
+    blockalign_t global_align;
 
     /* The current hidden_state of the bar, which indicates whether it is hidden or shown */
     enum { S_HIDE = 0,
