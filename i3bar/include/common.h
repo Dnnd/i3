@@ -57,6 +57,7 @@ struct status_block {
     char *min_width_str;
 
     blockalign_t align;
+    blockalign_t global_align;
 
     bool urgent;
     bool no_separator;

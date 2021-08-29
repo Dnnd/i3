@@ -254,6 +254,16 @@ static int stdin_string(void *context, const unsigned char *val, size_t len) {
         }
         return 1;
     }
+    if (strcasecmp(ctx->last_map_key, "global_align") == 0) {
+        if (len == strlen("center") && !strncmp((const char *)val, "center", strlen("center"))) {
+            ctx->block.global_align = ALIGN_CENTER;
+        } else if (len == strlen("left") && !strncmp((const char *)val, "left", strlen("left"))) {
+            ctx->block.global_align = ALIGN_LEFT;
+        } else {
+            ctx->block.global_align = ALIGN_RIGHT;
+        }
+        return 1;
+    }
     if (strcasecmp(ctx->last_map_key, "min_width") == 0) {
         sasprintf(&(ctx->block.min_width_str), "%.*s", len, val);
         return 1;
