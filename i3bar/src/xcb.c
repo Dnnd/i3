@@ -183,60 +183,96 @@ static void draw_separator(i3_output *output, uint32_t x, struct status_block *b
                        separator_x, bar_height / 2 - font.height / 2, x - separator_x);
     }
 }
+typedef struct {
+    uint32_t width;
+    struct status_block *last_block;
+} statusline_part_t;
 
-static uint32_t predict_statusline_length(bool use_short_text) {
-    uint32_t width = 0;
-    struct status_block *block;
-
-    TAILQ_FOREACH (block, &statusline_head, blocks) {
-        i3String *text = block->full_text;
-        struct status_block_render_desc *render = &block->full_render;
-        if (use_short_text && block->short_text != NULL) {
-            text = block->short_text;
-            render = &block->short_render;
-        }
-
-        if (i3string_get_num_bytes(text) == 0)
-            continue;
-
-        render->width = predict_text_width(text);
-        if (block->border)
-            render->width += logical_px(block->border_left + block->border_right);
-
-        /* Compute offset and append for text aligment in min_width. */
-        if (block->min_width <= render->width) {
-            render->x_offset = 0;
-            render->x_append = 0;
-        } else {
-            uint32_t padding_width = block->min_width - render->width;
-            switch (block->align) {
-                case ALIGN_LEFT:
-                    render->x_append = padding_width;
-                    break;
-                case ALIGN_RIGHT:
-                    render->x_offset = padding_width;
-                    break;
-                case ALIGN_CENTER:
-                    render->x_offset = padding_width / 2;
-                    render->x_append = padding_width / 2 + padding_width % 2;
-                    break;
-            }
-        }
-
-        width += render->width + render->x_offset + render->x_append;
-
-        /* If this is not the last block, add some pixels for a separator. */
-        if (TAILQ_NEXT(block, blocks) != NULL)
-            width += block->sep_block_width;
+static statusline_part_t layout_short[3];
+static statusline_part_t layout_full[3];
+static void cleanup_layout(statusline_part_t *layout) {
+    for (int i = 0; i < 3; ++i) {
+        layout[i].width = 0;
+        layout[i].last_block = NULL;
     }
+}
+static void add_block_to_layout(struct status_block *block, statusline_part_t *layout, struct status_block_render_desc *render) {
+    statusline_part_t *layout_part = &layout[block->global_align];
+    layout_part->width += render->width + render->x_offset + render->x_append + block->sep_block_width;
+    layout_part->last_block = block;
+}
 
-    return width;
+static void adjust_last_block_width(statusline_part_t *layout) {
+    if (layout[ALIGN_CENTER].last_block != NULL) {
+        layout[ALIGN_CENTER].width -= layout[ALIGN_CENTER].last_block->sep_block_width;
+    }
+    if (layout[ALIGN_RIGHT].last_block != NULL) {
+        layout[ALIGN_RIGHT].width -= layout[ALIGN_RIGHT].last_block->sep_block_width;
+    }
+    if (layout[ALIGN_LEFT].last_block != NULL) {
+        layout[ALIGN_LEFT].width -= layout[ALIGN_LEFT].last_block->sep_block_width;
+    }
+}
+
+static void set_render_parameters(struct status_block *block, i3String *text, struct status_block_render_desc *render) {
+    render->width = predict_text_width(text);
+    if (block->border)
+        render->width += logical_px(block->border_left + block->border_right);
+
+    /* Compute offset and append for text aligment in min_width. */
+    if (block->min_width <= render->width) {
+        render->x_offset = 0;
+        render->x_append = 0;
+    } else {
+        uint32_t padding_width = block->min_width - render->width;
+        switch (block->align) {
+            case ALIGN_LEFT:
+                render->x_append = padding_width;
+                break;
+            case ALIGN_RIGHT:
+                render->x_offset = padding_width;
+                break;
+            case ALIGN_CENTER:
+                render->x_offset = padding_width / 2;
+                render->x_append = padding_width / 2 + padding_width % 2;
+                break;
+        }
+    }
+}
+
+static void predict_statusline_layouts() {
+    cleanup_layout(layout_full);
+    cleanup_layout(layout_short);
+    struct status_block *block;
+    TAILQ_FOREACH (block, &statusline_head, blocks) {
+        if (block->short_text != NULL && i3string_get_num_bytes(block->short_text) == 0) {
+            set_render_parameters(block, block->short_text, &block->short_render);
+            add_block_to_layout(block, layout_short, &block->short_render);
+        }
+        set_render_parameters(block, block->full_text, &block->full_render);
+        add_block_to_layout(block, layout_full, &block->full_render);
+    }
+    adjust_last_block_width(layout_full);
+    adjust_last_block_width(layout_short);
+}
+
+static uint32_t get_statusline_length(statusline_part_t *layouts) {
+    uint32_t length = 0;
+    for (int i = 0; i < 3; ++i) {
+        length += layouts[i].width;
+    }
+    return length;
 }
 
 /*
  * Redraws the statusline to the output's statusline_buffer
  */
-static void draw_statusline(i3_output *output, uint32_t clip_left, bool use_focus_colors, bool use_short_text) {
+static void draw_statusline_with_offset(i3_output *output, uint32_t clip_left, bool use_focus_colors, bool use_short_text, int right_layout_offset, int center_layout_offset) {
+    int offsets[3];
+    offsets[ALIGN_CENTER] = center_layout_offset - clip_left;
+    offsets[ALIGN_RIGHT] = right_layout_offset - clip_left;
+    offsets[ALIGN_LEFT] = 0 - clip_left;
+
     struct status_block *block;
 
     color_t bar_color = (use_focus_colors ? colors.focus_bar_bg : colors.bar_bg);
@@ -248,15 +284,19 @@ static void draw_statusline(i3_output *output, uint32_t clip_left, bool use_focu
      * to that x position is a no-op which XCB and Cairo safely ignore. Once x moves
      * up by 75 and goes past INT_MAX, it will wrap around again to 0, and we start
      * actually rendering content to the surface. */
-    uint32_t x = 0 - clip_left;
+
 
     /* Draw the text of each block */
     TAILQ_FOREACH (block, &statusline_head, blocks) {
         i3String *text = block->full_text;
         struct status_block_render_desc *render = &block->full_render;
+        statusline_part_t *layout;
         if (use_short_text && block->short_text != NULL) {
             text = block->short_text;
             render = &block->short_render;
+            layout = &layout_short[block->global_align];
+        } else {
+            layout = &layout_full[block->global_align];
         }
 
         if (i3string_get_num_bytes(text) == 0)
@@ -277,6 +317,7 @@ static void draw_statusline(i3_output *output, uint32_t clip_left, bool use_focu
 
         int full_render_width = render->width + render->x_offset + render->x_append;
         int has_border = block->border ? 1 : 0;
+        int x = offsets[block->global_align];
         if (block->border || block->background || block->urgent) {
             /* Let's determine the colors first. */
             color_t border_color = bar_color;
@@ -308,12 +349,12 @@ static void draw_statusline(i3_output *output, uint32_t clip_left, bool use_focu
                        x + render->x_offset + has_border * logical_px(block->border_left),
                        bar_height / 2 - font.height / 2,
                        render->width - has_border * logical_px(block->border_left + block->border_right));
-        x += full_render_width;
+        offsets[block->global_align] += full_render_width;
 
         /* If this is not the last block, draw a separator. */
-        if (TAILQ_NEXT(block, blocks) != NULL) {
-            x += block->sep_block_width;
-            draw_separator(output, x, block, use_focus_colors);
+        if (layout->last_block != block) {
+            offsets[block->global_align] += block->sep_block_width;
+            draw_separator(output, offsets[block->global_align], block, use_focus_colors);
         }
     }
 }
@@ -1994,16 +2035,12 @@ static void draw_button(surface_t *surface, color_t fg_color, color_t bg_color, 
                    bar_height / 2 - font.height / 2, text_width);
 }
 
-/*
- * Render the bars, with buttons and statusline
- *
- */
 void draw_bars(bool unhide) {
     DLOG("Drawing bars...\n");
 
-    uint32_t full_statusline_width = predict_statusline_length(false);
-    uint32_t short_statusline_width = predict_statusline_length(true);
-
+    predict_statusline_layouts();
+    uint32_t short_statusline_width = get_statusline_length(layout_short);
+    uint32_t full_statusline_width = get_statusline_length(layout_full);
     i3_output *outputs_walk;
     SLIST_FOREACH (outputs_walk, outputs, slist) {
         int workspace_width = 0;
@@ -2080,22 +2117,31 @@ void draw_bars(bool unhide) {
             uint32_t statusline_width = full_statusline_width;
             bool use_short_text = false;
 
+            int center_layout_x_offset = 0;
+            int right_layout_x_offset = 0;
+
             if (statusline_width > max_statusline_width) {
                 statusline_width = short_statusline_width;
                 use_short_text = true;
                 if (statusline_width > max_statusline_width) {
                     clip_left = statusline_width - max_statusline_width;
                 }
+                center_layout_x_offset = outputs_walk->rect.w / 2 - layout_short[ALIGN_CENTER].width / 2 - workspace_width;
+                right_layout_x_offset = outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px) - layout_short[ALIGN_RIGHT].width - workspace_width - hoff;
+            } else {
+                center_layout_x_offset = outputs_walk->rect.w / 2 - layout_full[ALIGN_CENTER].width / 2 - workspace_width;
+                right_layout_x_offset = outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px) - layout_full[ALIGN_RIGHT].width - workspace_width - hoff;
             }
+            DLOG("expecting tray %d on %d\n",tray_width, outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px));
+            DLOG("expecting right layout end on %d \n", right_layout_x_offset + layout_full[ALIGN_RIGHT].width + workspace_width);
+            DLOG("expecting left layout begin on %d \n", workspace_width);
+            DLOG("expecting status line %d to be drawn from %d\n", max_statusline_width, right_layout_x_offset + layout_full[ALIGN_RIGHT].width + workspace_width - max_statusline_width);
 
-            int16_t visible_statusline_width = MIN(statusline_width, max_statusline_width);
-            int x_dest = outputs_walk->rect.w - tray_width - logical_px((tray_width > 0) * sb_hoff_px) - visible_statusline_width;
-
-            draw_statusline(outputs_walk, clip_left, use_focus_colors, use_short_text);
+            draw_statusline_with_offset(outputs_walk, clip_left, use_focus_colors, use_short_text, right_layout_x_offset, center_layout_x_offset);
             draw_util_copy_surface(&outputs_walk->statusline_buffer, &outputs_walk->buffer, 0, 0,
-                                   x_dest, 0, visible_statusline_width, (int16_t)bar_height);
+                                   workspace_width, 0, max_statusline_width, (int16_t)bar_height);
 
-            outputs_walk->statusline_width = statusline_width;
+            outputs_walk->statusline_width = max_statusline_width;
             outputs_walk->statusline_short_text = use_short_text;
         }
     }
